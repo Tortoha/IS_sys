@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { join } from 'path'
 import { ROLE, checkPassword, getDb, one, type User } from './db'
-import { services } from './services'
+import { publicApi, services } from './services'
 import { clearAll, loadDemo } from './demo'
 
 const { manager: M, cashier: C, tech: T, boss: B } = ROLE
@@ -35,6 +35,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#ffffff',
     title: 'Прокат автомобилей',
+    icon: join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -89,6 +90,9 @@ app.whenReady().then(() => {
       return (fn as (u: User, ...a: unknown[]) => unknown)(session, ...args)
     })
   }
+
+  // клиентский режим доступен без входа, но только эти три операции
+  for (const [name, fn] of Object.entries(publicApi)) handle(name, (...args) => (fn as (a: unknown) => unknown)(args[0]))
 
   handle('demoLoad', () => {
     if (session?.role_id !== B) throw new Error('Недостаточно прав для этой операции')

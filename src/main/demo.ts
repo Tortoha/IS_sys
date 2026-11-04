@@ -198,7 +198,7 @@ export function loadDemo(): Row {
   const candidates = carIds.filter((id) => !active.includes(id))
   for (let i = 0; i < 5; i++) {
     const car = pick(candidates)
-    const from = addDays(now, 3 + rnd(14))
+    const from = i === 0 ? now : addDays(now, 3 + rnd(14))
     const to = addDays(from, 1 + rnd(6))
     try {
       s.bookingsCreate(manager, { client_id: pick(clients), car_id: car, date_from: from, date_to: to, note: i === 0 ? 'Нужно детское кресло' : null })

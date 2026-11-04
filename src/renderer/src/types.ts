@@ -20,7 +20,7 @@ type Names =
   | 'paymentsList' | 'contractFind' | 'paymentsRegister' | 'settlementsList' | 'settlementRun'
   | 'returnsList' | 'returnsCreate'
   | 'maintenanceList' | 'maintenanceQueue' | 'maintenanceSend' | 'maintenanceCreate'
-  | 'report' | 'demoLoad' | 'demoClear'
+  | 'report' | 'demoLoad' | 'demoClear' | 'publicClasses' | 'publicCars' | 'publicRequest' | 'publicStatus'
 
 declare global {
   interface Window {

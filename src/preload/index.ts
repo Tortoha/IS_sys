@@ -12,7 +12,7 @@ const names = [
   'paymentsList', 'contractFind', 'paymentsRegister', 'settlementsList', 'settlementRun',
   'returnsList', 'returnsCreate',
   'maintenanceList', 'maintenanceQueue', 'maintenanceSend', 'maintenanceCreate',
-  'report', 'demoLoad', 'demoClear'
+  'report', 'demoLoad', 'demoClear', 'publicClasses', 'publicCars', 'publicRequest', 'publicStatus'
 ]
 
 const bridge: Record<string, (...args: unknown[]) => Promise<unknown>> = {}

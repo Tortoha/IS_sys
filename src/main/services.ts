@@ -64,12 +64,22 @@ function carBusy(carId: number, from: string, to: string, exceptBooking = 0, exc
   return !!(b || c)
 }
 
-/** Состояние «Свободен/Забронирован» зависит от наличия активных броней. */
+/**
+ * «Забронирован» — автомобиль, у которого есть действующая бронь на сегодняшний день.
+ * Автомобиль с бронью на будущие даты остаётся «Свободен»: его защищает проверка пересечений по датам.
+ */
 function refreshBooked(carId: number): void {
   const car = one('SELECT status_id FROM cars WHERE id=?', carId)
   if (!car || ![CAR.free, CAR.booked].includes(car.status_id)) return
-  const has = one('SELECT 1 FROM bookings WHERE car_id=? AND status_id IN (1,2) LIMIT 1', carId)
+  const t = today()
+  const has = one(
+    'SELECT 1 FROM bookings WHERE car_id=? AND status_id IN (1,2) AND date_from<=? AND date_to>=? LIMIT 1', carId, t, t
+  )
   run('UPDATE cars SET status_id=? WHERE id=?', has ? CAR.booked : CAR.free, carId)
+}
+
+function refreshAllBooked(): void {
+  for (const c of all('SELECT id FROM cars WHERE status_id IN (1,2)')) refreshBooked(c.id)
 }
 
 function contractDue(id: number) {
@@ -95,6 +105,20 @@ function contractSelect(where = '1=1', ...p: unknown[]): Row[] {
       ORDER BY k.id DESC`,
     ...p
   )
+}
+
+function availableCars(p: Row): Row[] {
+  if (!p.date_from || !p.date_to || p.date_to < p.date_from) fail('Укажите корректные даты аренды')
+  refreshAllBooked()
+  const cars = all(
+    `SELECT c.*, cl.name AS class_name, s.name AS status_name, t.price_per_day
+       FROM cars c JOIN car_classes cl ON cl.id=c.class_id
+       JOIN car_statuses s ON s.id=c.status_id
+       JOIN tariffs t ON t.class_id=c.class_id
+      WHERE c.status_id = 1 ${p.class_id ? 'AND c.class_id=' + num(p.class_id) : ''}
+      ORDER BY c.brand, c.model`
+  )
+  return cars.filter((c) => !carBusy(c.id, p.date_from, p.date_to))
 }
 
 // ───────────── Публичный API (первый аргумент — пользователь) ─────────────
@@ -228,13 +252,15 @@ export const services = {
     )}),
 
   // ───────────── Автомобили ─────────────
-  carsList: (_u: User): Row[] =>
-    all(`SELECT c.*, cl.name AS class_name, s.name AS status_name, t.price_per_day
+  carsList: (_u: User): Row[] => {
+    refreshAllBooked()
+    return all(`SELECT c.*, cl.name AS class_name, s.name AS status_name, t.price_per_day
            FROM cars c
            JOIN car_classes cl ON cl.id=c.class_id
            JOIN car_statuses s ON s.id=c.status_id
            LEFT JOIN tariffs t ON t.class_id=c.class_id
-          ORDER BY c.code`),
+          ORDER BY c.code`)
+  },
 
   carsSave: (_u: User, c: Row): void => {
     const brand = str(c.brand), model = str(c.model), plate = str(c.plate).toUpperCase()
@@ -260,19 +286,8 @@ export const services = {
     run('DELETE FROM cars WHERE id=?', id)
   },
 
-  /** Автомобили, доступные на даты: не на ТО/недоступны и нет пересечений с бронями и договорами (R1, R10). */
-  carsAvailable: (_u: User, p: Row): Row[] => {
-    if (!p.date_from || !p.date_to || p.date_to < p.date_from) fail('Укажите корректные даты аренды')
-    const cars = all(
-      `SELECT c.*, cl.name AS class_name, s.name AS status_name, t.price_per_day
-         FROM cars c JOIN car_classes cl ON cl.id=c.class_id
-         JOIN car_statuses s ON s.id=c.status_id
-         JOIN tariffs t ON t.class_id=c.class_id
-        WHERE c.status_id NOT IN (4,5) ${p.class_id ? 'AND c.class_id=' + num(p.class_id) : ''}
-        ORDER BY c.brand, c.model`
-    )
-    return cars.filter((c) => !carBusy(c.id, p.date_from, p.date_to))
-  },
+  /** Доступны: статус «Свободен», автомобиль не на ТО и нет пересекающихся броней и договоров (СРО 9, шаг 4; R1, R14). */
+  carsAvailable: (_u: User, p: Row): Row[] => availableCars(p),
 
   // ───────────── Бронирование ─────────────
   bookingsList: (_u: User): Row[] =>
@@ -296,12 +311,15 @@ export const services = {
         fail(`Бронирование невозможно: водительское удостоверение клиента действует до ${client.license_expiry}, раньше окончания аренды`)
       const car = one('SELECT * FROM cars WHERE id=?', b.car_id)
       if (!car) fail('Автомобиль не найден')
-      if ([CAR.service, CAR.unavailable].includes(car.status_id)) fail('Автомобиль на ТО или недоступен: бронь невозможна')
+      refreshBooked(car.id)
+      const st = one('SELECT status_id FROM cars WHERE id=?', car.id).status_id
+      if ([CAR.service, CAR.unavailable].includes(st)) fail('Автомобиль на ТО или недоступен: бронь невозможна')
       if (carBusy(b.car_id, b.date_from, b.date_to)) fail('На эти даты автомобиль уже забронирован или находится в аренде')
+      if (st !== CAR.free) fail('Автомобиль сейчас не свободен (в аренде или забронирован): бронь невозможна')
       const code = nextCode('bookings', 'B', 4, year(b.date_from))
       run(`INSERT INTO bookings (code, client_id, car_id, date_from, date_to, status_id, created_at, employee_id, note)
            VALUES (?,?,?,?,?,?,?,?,?)`,
-        code, b.client_id, b.car_id, b.date_from, b.date_to, BOOK.created, b.created_at ?? today(), u.id, str(b.note) || null)
+        code, b.client_id, b.car_id, b.date_from, b.date_to, BOOK.created, b.created_at ?? today(), u.id || null, str(b.note) || null)
       refreshBooked(b.car_id)
       return code
     }),
@@ -662,3 +680,49 @@ function settlementCalc(contractId: number) {
 }
 
 export type Services = typeof services
+
+/** Клиентский режим без входа в систему (СРО 8, таблица 1, сценарии 1–3). */
+export const publicApi = {
+  publicClasses: (): Row[] => all('SELECT * FROM car_classes ORDER BY id'),
+
+  /** Сценарий 1: поиск свободного автомобиля на даты. Показывает только сведения, нужные клиенту. */
+  publicCars: (p: Row): Row[] =>
+    availableCars(p).map((c) => ({
+      id: c.id, brand: c.brand, model: c.model, year: c.year, color: c.color,
+      class_name: c.class_name, price_per_day: c.price_per_day
+    })),
+
+  /** Сценарий 2: заявка на бронирование. Бронь создаётся со статусом «Создано», подтверждает её менеджер. */
+  publicRequest: (p: Row): Row =>
+    tx(() => {
+      const iin = str(p.iin_bin)
+      if (!/^\d{12}$/.test(iin)) fail('ИИН должен содержать 12 цифр')
+      let client = one('SELECT * FROM clients WHERE iin_bin=?', iin)
+      if (!client) {
+        const id = services.clientsSave({} as User, {
+          type_id: 1, full_name: p.full_name, iin_bin: iin, phone: p.phone, email: p.email,
+          id_doc_no: p.id_doc_no, license_no: p.license_no, license_expiry: p.license_expiry
+        })
+        client = one('SELECT * FROM clients WHERE id=?', id)
+      }
+      const code = services.bookingsCreate({ id: 0 } as User, {
+        client_id: client.id, car_id: p.car_id, date_from: p.date_from, date_to: p.date_to,
+        note: 'Заявка клиента'
+      })
+      return { code, status: 'Создано' }
+    }),
+
+  /** Сценарий 3: статус бронирования по номеру брони и ИИН. */
+  publicStatus: (p: Row): Row => {
+    const r = one(
+      `SELECT b.code, b.date_from, b.date_to, b.cancel_reason, s.name AS status_name,
+              c.brand || ' ' || c.model AS car_name
+         FROM bookings b JOIN clients cl ON cl.id=b.client_id
+         JOIN cars c ON c.id=b.car_id JOIN booking_statuses s ON s.id=b.status_id
+        WHERE b.code=? AND cl.iin_bin=?`,
+      str(p.code).toUpperCase(), str(p.iin_bin)
+    )
+    if (!r) fail('Бронь не найдена. Проверьте номер брони и ИИН')
+    return r
+  }
+}

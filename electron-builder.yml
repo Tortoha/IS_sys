@@ -6,10 +6,12 @@ directories:
 files:
   - out/**/*
   - package.json
+  - build/icon.png
 asarUnpack:
   - node_modules/better-sqlite3/**/*
 npmRebuild: false
 win:
+  icon: build/icon.ico
   target: nsis
 nsis:
   oneClick: false

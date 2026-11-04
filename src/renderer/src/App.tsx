@@ -1,5 +1,6 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import Login from './pages/Login'
+import ClientPortal from './pages/ClientPortal'
 import Bookings from './pages/Bookings'
 import Contracts from './pages/Contracts'
 import Payments from './pages/Payments'
@@ -34,6 +35,7 @@ export default function App() {
   const [ready, setReady] = useState(false)
   const [page, setPage] = useState('')
   const [version, setVersion] = useState(0)
+  const [portal, setPortal] = useState(false)
 
   useEffect(() => {
     window.api.me().then((u) => {
@@ -48,7 +50,7 @@ export default function App() {
   }, [user, page, allowed])
 
   if (!ready) return null
-  if (!user) return <Login onLogin={setUser} />
+  if (!user) return portal ? <ClientPortal onBack={() => setPortal(false)} /> : <Login onLogin={setUser} onClient={() => setPortal(true)} />
 
   const Current = allowed.find((p) => p.id === page)?.view
 

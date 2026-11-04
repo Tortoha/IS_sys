@@ -9,7 +9,7 @@ const demo = [
   ['to', 'Специалист по ТО']
 ]
 
-export default function Login({ onLogin }: { onLogin: (u: User) => void }) {
+export default function Login({ onLogin, onClient }: { onLogin: (u: User) => void; onClient: () => void }) {
   const [login, setLogin] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -43,6 +43,9 @@ export default function Login({ onLogin }: { onLogin: (u: User) => void }) {
         <ErrorLine text={error} />
         <button className="btn primary block" onClick={submit}>
           Войти
+        </button>
+        <button className="btn block" style={{ marginTop: 12 }} onClick={onClient}>
+          Я клиент: найти автомобиль
         </button>
         <div className="login-hint">
           <p>Тестовые учётные записи, пароль 1234:</p>

@@ -396,3 +396,7 @@ h3.section { margin-top: 48px; }
 .inline .search { flex: 1; }
 .field select { width: 100%; }
 .row-actions.tight { margin: 0 0 20px; }
+
+.portal { max-width: 1000px; margin: 0 auto; padding: 48px 32px; height: 100%; overflow-y: auto; }
+.portal-head { display: flex; justify-content: space-between; align-items: flex-start; }
+.portal-body { padding-top: 32px; }
