@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import { Badge, Empty, ErrorLine, Field, Modal, ModalActions, PageHeader, Search, useLoad, useRefs, match } from '../components'
+import { Badge, Empty, ErrorLine, Field, KV, Modal, ModalActions, PageHeader, Search, useLoad, useRefs, match } from '../components'
+import ClientForm from './ClientForm'
 import ContractForm from './ContractForm'
-import { addDaysIso, cleanError, dateRu, money, todayIso, type Row } from '../types'
+import { addDaysIso, cleanError, daysCount, dateRu, money, todayIso, type Row } from '../types'
 
 export default function Bookings() {
   const [list, reload] = useLoad<Row[]>(() => window.api.bookingsList(), [])
@@ -9,6 +10,9 @@ export default function Bookings() {
   const [open, setOpen] = useState(false)
   const [issue, setIssue] = useState<Row | null>(null)
   const [notice, setNotice] = useState('')
+  const [cancel, setCancel] = useState<Row | null>(null)
+  const [reason, setReason] = useState('')
+  const [cancelError, setCancelError] = useState('')
 
   const act = async (fn: () => Promise<unknown>) => {
     try {
@@ -61,6 +65,7 @@ export default function Bookings() {
                 <td className="wrap">
                   {b.code}
                   {b.note && <div className="muted small">{b.note}</div>}
+                  {b.cancel_reason && <div className="muted small">Причина отмены: {b.cancel_reason}</div>}
                 </td>
                 <td>
                   {b.client_name}
@@ -87,10 +92,7 @@ export default function Bookings() {
                       <button className="link" onClick={() => setIssue(b)}>
                         Выдать
                       </button>
-                      <button
-                        className="link danger"
-                        onClick={() => confirm(`Отменить бронь ${b.code}?`) && act(() => window.api.bookingsCancel(b.id))}
-                      >
+                      <button className="link danger" onClick={() => (setCancel(b), setReason(''), setCancelError(''))}>
                         Отменить
                       </button>
                     </>
@@ -112,6 +114,28 @@ export default function Bookings() {
           }}
         />
       )}
+      {cancel && (
+        <Modal title={`Отмена брони ${cancel.code}`} onClose={() => setCancel(null)}>
+          <p className="muted">После отмены автомобиль снова станет доступен на эти даты.</p>
+          <Field label="Причина отмены">
+            <input autoFocus value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+          <ErrorLine text={cancelError} />
+          <ModalActions
+            onCancel={() => setCancel(null)}
+            ok="Отменить бронь"
+            onOk={async () => {
+              try {
+                await window.api.bookingsCancel(cancel.id, reason)
+                setCancel(null)
+                reload()
+              } catch (e) {
+                setCancelError(cleanError(e))
+              }
+            }}
+          />
+        </Modal>
+      )}
       {issue && (
         <ContractForm
           booking={issue}
@@ -131,18 +155,31 @@ function BookingForm(props: { onClose: () => void; onDone: (code: string) => voi
   const refs = useRefs()
   const [clients, setClients] = useState<Row[]>([])
   const [cars, setCars] = useState<Row[]>([])
-  const [f, setF] = useState({ client_id: 0, car_id: 0, class_id: 0, date_from: addDaysIso(todayIso(), 1), date_to: addDaysIso(todayIso(), 3), note: '' })
+  const [q, setQ] = useState('')
+  const [newClient, setNewClient] = useState(false)
+  const [f, setF] = useState({
+    client_id: 0, car_id: 0, class_id: 0,
+    date_from: addDaysIso(todayIso(), 1), date_to: addDaysIso(todayIso(), 3), note: ''
+  })
   const [error, setError] = useState('')
 
+  const loadClients = () => window.api.clientsList().then(setClients)
   useEffect(() => {
-    window.api.clientsList().then(setClients)
+    loadClients()
   }, [])
 
+  const datesError =
+    f.date_to < f.date_from ? 'Дата окончания раньше даты начала' : f.date_from < todayIso() ? 'Дата начала не может быть в прошлом' : ''
+
   useEffect(() => {
-    if (f.date_to >= f.date_from) {
+    if (!datesError) {
       window.api.carsAvailable({ date_from: f.date_from, date_to: f.date_to, class_id: f.class_id || undefined }).then(setCars)
     } else setCars([])
-  }, [f.date_from, f.date_to, f.class_id])
+  }, [f.date_from, f.date_to, f.class_id, datesError])
+
+  const car = cars.find((c) => c.id === f.car_id)
+  const client = clients.find((c) => c.id === f.client_id)
+  const shownClients = clients.filter((c) => match(c, q))
 
   const submit = async () => {
     try {
@@ -153,15 +190,16 @@ function BookingForm(props: { onClose: () => void; onDone: (code: string) => voi
   }
 
   return (
-    <Modal title="Новая бронь" onClose={props.onClose}>
+    <Modal title="Новая бронь" onClose={props.onClose} wide>
       <div className="grid2">
         <Field label="Дата начала">
-          <input type="date" value={f.date_from} onChange={(e) => setF({ ...f, date_from: e.target.value, car_id: 0 })} />
+          <input type="date" min={todayIso()} value={f.date_from} onChange={(e) => setF({ ...f, date_from: e.target.value, car_id: 0 })} />
         </Field>
         <Field label="Дата окончания">
           <input type="date" min={f.date_from} value={f.date_to} onChange={(e) => setF({ ...f, date_to: e.target.value, car_id: 0 })} />
         </Field>
       </div>
+      {datesError && <p className="error">{datesError}. Измените даты.</p>}
       <Field label="Класс автомобиля">
         <select value={f.class_id} onChange={(e) => setF({ ...f, class_id: Number(e.target.value), car_id: 0 })}>
           <option value={0}>Любой</option>
@@ -172,31 +210,77 @@ function BookingForm(props: { onClose: () => void; onDone: (code: string) => voi
           ))}
         </select>
       </Field>
-      <Field label="Автомобиль" hint={`Свободно на эти даты: ${cars.length}`}>
-        <select value={f.car_id} onChange={(e) => setF({ ...f, car_id: Number(e.target.value) })}>
-          <option value={0}>Выберите автомобиль</option>
-          {cars.map((c) => (
-            <option key={c.id} value={c.id}>
-              {c.brand} {c.model} · {c.class_name} · {money(c.price_per_day)}/сут
-            </option>
-          ))}
-        </select>
-      </Field>
-      <Field label="Клиент">
+      {!datesError && cars.length === 0 ? (
+        <p className="warn">Свободных автомобилей на эти даты нет. Измените даты или класс автомобиля.</p>
+      ) : (
+        <Field label="Автомобиль" hint={`Свободно на эти даты: ${cars.length}`}>
+          <select value={f.car_id} onChange={(e) => setF({ ...f, car_id: Number(e.target.value) })}>
+            <option value={0}>Выберите автомобиль</option>
+            {cars.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.brand} {c.model} · {c.class_name} · {money(c.price_per_day)}/сут
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+      {car && (
+        <KV
+          items={[
+            ['Автомобиль', `${car.brand} ${car.model}, ${car.year}, ${car.plate}`],
+            ['Тариф', `${car.class_name}, ${money(car.price_per_day)} в сутки`],
+            ['Ориентировочная стоимость', `${money(car.price_per_day * daysCount(f.date_from, f.date_to))} за ${daysCount(f.date_from, f.date_to)} сут.`]
+          ]}
+        />
+      )}
+
+      <div className="field">
+        <span>Клиент</span>
+        <div className="inline">
+          <input className="search" placeholder="Найти по ФИО или ИИН" value={q} onChange={(e) => setQ(e.target.value)} />
+          <button className="btn" onClick={() => setNewClient(true)}>
+            Новый клиент
+          </button>
+        </div>
         <select value={f.client_id} onChange={(e) => setF({ ...f, client_id: Number(e.target.value) })}>
-          <option value={0}>Выберите клиента</option>
-          {clients.map((c) => (
+          <option value={0}>Выберите клиента ({shownClients.length})</option>
+          {shownClients.map((c) => (
             <option key={c.id} value={c.id}>
               {c.full_name} · {c.iin_bin}
             </option>
           ))}
         </select>
-      </Field>
+      </div>
+      {client && (
+        <KV
+          items={[
+            ['Тип', client.type_name + (client.representative ? ` · ${client.representative}` : '')],
+            ['Телефон', client.phone],
+            ['Водительское удостоверение', `${client.license_no}, действует до ${dateRu(client.license_expiry)}`]
+          ]}
+        />
+      )}
+      {client && client.license_expiry < f.date_to && (
+        <p className="error">Удостоверение действует раньше окончания аренды: бронирование невозможно. Обновите данные клиента.</p>
+      )}
       <Field label="Примечание">
         <input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
       </Field>
       <ErrorLine text={error} />
-      <ModalActions onCancel={props.onClose} onOk={submit} ok="Зарегистрировать" />
+      <ModalActions onCancel={props.onClose} onOk={submit} ok="Подтвердить бронирование" />
+
+      {newClient && (
+        <ClientForm
+          initial={{ type_id: 1, license_expiry: '' }}
+          onClose={() => setNewClient(false)}
+          onSaved={async (id) => {
+            setNewClient(false)
+            await loadClients()
+            setQ('')
+            setF((x) => ({ ...x, client_id: id }))
+          }}
+        />
+      )}
     </Modal>
   )
 }

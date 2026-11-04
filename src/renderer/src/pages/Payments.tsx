@@ -1,6 +1,6 @@
 import { useState } from 'react'
-import { Badge, Empty, ErrorLine, Field, KV, Modal, PageHeader, Search, Tabs, useLoad, useRefs, match } from '../components'
-import { cleanError, dateRu, money, type Row } from '../types'
+import { Badge, Empty, ErrorLine, Field, KV, Modal, ModalActions, PageHeader, Search, Tabs, useLoad, useRefs, match } from '../components'
+import { addDaysIso, cleanError, dateRu, money, todayIso, type Row } from '../types'
 
 const KASPI = 3
 
@@ -37,6 +37,22 @@ function Accept() {
   const [ref, setRef] = useState('')
   const [error, setError] = useState('')
   const [receipt, setReceipt] = useState<Row | null>(null)
+  const [extend, setExtend] = useState<string | null>(null)
+  const [fine, setFine] = useState<Row | null>(null)
+  const [recalcError, setRecalcError] = useState('')
+
+  /** Пересчёт стоимости при продлении или штрафе (сценарий 8, СРО 8). */
+  const recalc = async (fn: () => Promise<unknown>, close: () => void) => {
+    try {
+      await fn()
+      close()
+      setRecalcError('')
+      const k = (await window.api.contractFind(sel!.code)).find((x: Row) => x.id === sel!.id)
+      if (k) choose(k)
+    } catch (e) {
+      setRecalcError(cleanError(e))
+    }
+  }
 
   const search = async () => {
     try {
@@ -130,9 +146,20 @@ function Accept() {
               ['Тариф', `${sel.tariff_name}, ${money(sel.price_per_day)} в сутки`],
               ['Аренда к оплате', money(sel.rentDue)],
               ['Залог к внесению', money(sel.depositDue)],
-              ['Итого к оплате', money(sel.due)]
+              ['Итого к оплате', money(sel.due)],
+              ...(sel.fines_sum > 0 ? [['Начисленные штрафы', `${money(sel.fines_sum)}, будут удержаны из залога при возврате`] as [string, string]] : [])
             ]}
           />
+          {[1, 2].includes(sel.status_id) && !sel.has_act && (
+            <div className="row-actions tight">
+              <button className="btn" onClick={() => (setExtend(addDaysIso(sel.date_to, 1)), setRecalcError(''))}>
+                Продлить срок и пересчитать
+              </button>
+              <button className="btn" onClick={() => (setFine({ type_id: 4, amount: '' }), setRecalcError(''))}>
+                Начислить штраф
+              </button>
+            </div>
+          )}
           {sel.due === 0 ? (
             <p className="info">По договору всё оплачено.</p>
           ) : (
@@ -168,6 +195,53 @@ function Accept() {
             </>
           )}
         </div>
+      )}
+
+      {sel && extend !== null && (
+        <Modal title="Продление аренды" onClose={() => setExtend(null)}>
+          <Field label="Новая дата возврата" hint="Стоимость аренды будет пересчитана, разницу нужно будет доплатить">
+            <input type="date" min={addDaysIso(sel.date_to, 1)} value={extend} onChange={(e) => setExtend(e.target.value)} />
+          </Field>
+          <ErrorLine text={recalcError} />
+          <ModalActions
+            onCancel={() => setExtend(null)}
+            ok="Продлить"
+            onOk={() => recalc(() => window.api.contractsExtend(sel.id, extend), () => setExtend(null))}
+          />
+        </Modal>
+      )}
+      {sel && fine && (
+        <Modal title="Начисление штрафа" onClose={() => setFine(null)}>
+          <Field label="Вид штрафа">
+            <select
+              value={fine.type_id}
+              onChange={(e) => {
+                const t = refs.fineTypes.find((x: Row) => x.id === Number(e.target.value))
+                setFine({ type_id: Number(e.target.value), amount: t?.default_amount || '' })
+              }}
+            >
+              {refs.fineTypes.map((t: Row) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Сумма, ₸">
+            <input type="number" value={fine.amount} onChange={(e) => setFine({ ...fine, amount: e.target.value })} />
+          </Field>
+          <ErrorLine text={recalcError} />
+          <ModalActions
+            onCancel={() => setFine(null)}
+            ok="Начислить"
+            onOk={() =>
+              recalc(
+                () => window.api.finesAdd({ contract_id: sel.id, type_id: fine.type_id, amount: fine.amount, fined_at: todayIso() }),
+                () => setFine(null)
+              )
+            }
+          />
+        </Modal>
       )}
 
       {receipt && (
@@ -271,7 +345,7 @@ function Settle() {
               [sel.extra > 0 ? 'Клиент доплачивает' : 'Возврат залога клиенту', money(sel.extra > 0 ? sel.extra : sel.refund)]
             ]}
           />
-          <p className="muted small">Штрафы удерживаются из залога. После расчёта договор будет закрыт.</p>
+          <p className="muted small">Штрафы удерживаются из залога. После расчёта менеджер закроет договор.</p>
           {sel.rentDue > 0 && <p className="warn">Аренда не оплачена полностью. Сначала примите оплату на вкладке «Принять оплату».</p>}
           {(sel.extra > 0 || sel.refund > 0) && (
             <div className="grid2">
@@ -302,7 +376,7 @@ function Settle() {
               Отмена
             </button>
             <button className="btn primary" onClick={run}>
-              Выполнить расчёт и закрыть договор
+              Выполнить расчёт
             </button>
           </div>
         </Modal>
@@ -311,7 +385,7 @@ function Settle() {
       {done && (
         <Modal title="Расчёт выполнен" onClose={() => setDone(null)}>
           <p>
-            Договор {done.contract} закрыт.
+            Расчёт по договору {done.contract} выполнен. Менеджер может закрыть договор.
             {done.refund > 0 && ` Залог возвращён клиенту: ${money(done.refund)}.`}
             {done.extra > 0 && ` Получена доплата по штрафам: ${money(done.extra)}.`}
           </p>

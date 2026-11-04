@@ -182,19 +182,23 @@ export const services = {
                   WHERE k.client_id=c.id AND f.paid=0) AS unpaid_fines
            FROM clients c JOIN client_types t ON t.id=c.type_id ORDER BY c.full_name`),
 
-  clientsSave: (_u: User, c: Row): void => {
+  clientsSave: (_u: User, c: Row): number => {
     const iin = str(c.iin_bin)
     if (!/^\d{12}$/.test(iin)) fail(c.type_id === 2 ? 'БИН должен содержать 12 цифр' : 'ИИН должен содержать 12 цифр')
     const f = [str(c.full_name), str(c.phone), str(c.license_no), str(c.license_expiry)]
     if (f.some((x) => !x)) fail('Заполните ФИО, телефон и данные водительского удостоверения')
+    if (c.type_id === 2 && !str(c.representative)) fail('Укажите представителя организации')
+    const rep = c.type_id === 2 ? str(c.representative) : null
     if (c.id) {
-      run(`UPDATE clients SET type_id=?, full_name=?, iin_bin=?, phone=?, email=?, id_doc_no=?, license_no=?, license_expiry=? WHERE id=?`,
-        c.type_id, f[0], iin, f[1], str(c.email) || null, str(c.id_doc_no) || null, f[2], f[3], c.id)
-    } else {
-      run(`INSERT INTO clients (code, type_id, full_name, iin_bin, phone, email, id_doc_no, license_no, license_expiry)
-           VALUES (?,?,?,?,?,?,?,?,?)`,
-        nextCode('clients', 'K-', 5), c.type_id, f[0], iin, f[1], str(c.email) || null, str(c.id_doc_no) || null, f[2], f[3])
+      run(`UPDATE clients SET type_id=?, full_name=?, iin_bin=?, phone=?, email=?, id_doc_no=?, license_no=?, license_expiry=?, representative=? WHERE id=?`,
+        c.type_id, f[0], iin, f[1], str(c.email) || null, str(c.id_doc_no) || null, f[2], f[3], rep, c.id)
+      return c.id
     }
+    return Number(
+      run(`INSERT INTO clients (code, type_id, full_name, iin_bin, phone, email, id_doc_no, license_no, license_expiry, representative)
+           VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        nextCode('clients', 'K-', 5), c.type_id, f[0], iin, f[1], str(c.email) || null, str(c.id_doc_no) || null, f[2], f[3], rep).lastInsertRowid
+    )
   },
 
   clientsDelete: (_u: User, id: number): void => {
@@ -202,8 +206,14 @@ export const services = {
   },
 
   /** История аренд клиента: факты просрочки, повреждений и неоплаченные штрафы (R5). */
-  clientHistory: (_u: User, id: number): Row[] =>
-    all(
+  clientHistory: (_u: User, id: number): Row =>
+    ({
+      bookings: all(
+        `SELECT b.code, b.date_from, b.date_to, s.name AS status_name, b.cancel_reason,
+                c.brand || ' ' || c.model AS car_name, c.plate
+           FROM bookings b JOIN cars c ON c.id=b.car_id JOIN booking_statuses s ON s.id=b.status_id
+          WHERE b.client_id=? ORDER BY b.id DESC`, id),
+      contracts: all(
       `SELECT k.id, k.code, k.date_from, k.date_to, k.rent_sum, s.name AS status_name,
               c.brand || ' ' || c.model AS car_name, c.plate,
               r.return_date, r.damage,
@@ -215,7 +225,7 @@ export const services = {
          LEFT JOIN return_acts r ON r.contract_id=k.id
         WHERE k.client_id=? ORDER BY k.id DESC`,
       id
-    ),
+    )}),
 
   // ───────────── Автомобили ─────────────
   carsList: (_u: User): Row[] =>
@@ -279,6 +289,11 @@ export const services = {
     tx(() => {
       if (!b.client_id || !b.car_id) fail('Выберите клиента и автомобиль')
       if (!b.date_from || !b.date_to || b.date_to < b.date_from) fail('Дата окончания раньше даты начала')
+      if (b.date_from < (b.created_at ?? today())) fail('Дата начала аренды не может быть в прошлом')
+      const client = one('SELECT * FROM clients WHERE id=?', b.client_id)
+      if (!client) fail('Клиент не найден')
+      if (client.license_expiry < b.date_to)
+        fail(`Бронирование невозможно: водительское удостоверение клиента действует до ${client.license_expiry}, раньше окончания аренды`)
       const car = one('SELECT * FROM cars WHERE id=?', b.car_id)
       if (!car) fail('Автомобиль не найден')
       if ([CAR.service, CAR.unavailable].includes(car.status_id)) fail('Автомобиль на ТО или недоступен: бронь невозможна')
@@ -297,11 +312,12 @@ export const services = {
     run('UPDATE bookings SET status_id=? WHERE id=?', BOOK.confirmed, id)
   },
 
-  bookingsCancel: (_u: User, id: number): void =>
+  bookingsCancel: (_u: User, id: number, reason: string): void =>
     tx(() => {
+      if (!str(reason)) fail('Укажите причину отмены бронирования')
       const b = one('SELECT * FROM bookings WHERE id=?', id)
       if (!b || ![BOOK.created, BOOK.confirmed].includes(b.status_id)) fail('Отменить можно только созданную или подтверждённую бронь')
-      run('UPDATE bookings SET status_id=? WHERE id=?', BOOK.cancelled, id)
+      run('UPDATE bookings SET status_id=?, cancel_reason=? WHERE id=?', BOOK.cancelled, str(reason), id)
       refreshBooked(b.car_id)
     }),
 
@@ -439,7 +455,8 @@ export const services = {
     return contractSelect('(k.code LIKE ? OR cl.iin_bin = ?) ', '%' + s + '%', s).map((k) => ({
       ...k,
       ...contractDue(k.id),
-      services_sum: num(one('SELECT SUM(price_per_day) s FROM contract_services WHERE contract_id=?', k.id)?.s)
+      services_sum: num(one('SELECT SUM(price_per_day) s FROM contract_services WHERE contract_id=?', k.id)?.s),
+      fines_sum: num(one('SELECT SUM(amount) s FROM fines WHERE contract_id=? AND paid=0', k.id)?.s)
     }))
   },
 
@@ -474,14 +491,25 @@ export const services = {
 
   /** Договоры, по которым составлен акт возврата и нужен итоговый расчёт. */
   settlementsList: (_u: User): Row[] =>
-    contractSelect('k.status_id IN (1,2) AND EXISTS (SELECT 1 FROM return_acts r WHERE r.contract_id=k.id)').map((k) =>
+    contractSelect('k.status_id IN (1,2) AND k.settled=0 AND EXISTS (SELECT 1 FROM return_acts r WHERE r.contract_id=k.id)').map((k) =>
       ({ ...k, ...settlementCalc(k.id) })),
+
+  /** Договоры, по которым расчёт выполнен и менеджеру осталось закрыть договор (ПР 3, процесс 4, шаг 5). */
+  contractsToClose: (_u: User): Row[] =>
+    contractSelect('k.status_id IN (1,2) AND k.settled=1'),
+
+  contractsClose: (_u: User, id: number): void => {
+    const k = one('SELECT status_id, settled FROM contracts WHERE id=?', id)
+    if (!k || ![CTR.created, CTR.paid].includes(k.status_id)) fail('Договор не найден или уже закрыт')
+    if (!k.settled) fail('Договор можно закрыть только после расчёта кассира по штрафам и залогу')
+    run('UPDATE contracts SET status_id=? WHERE id=?', CTR.closed, id)
+  },
 
   settlementRun: (u: User, p: Row): Row =>
     tx(() => {
       const k = one('SELECT * FROM contracts WHERE id=?', p.contract_id)
-      if (!k || ![CTR.created, CTR.paid].includes(k.status_id) || !one('SELECT 1 FROM return_acts WHERE contract_id=?', k.id))
-        fail('Расчёт возможен только после оформления акта возврата')
+      if (!k || ![CTR.created, CTR.paid].includes(k.status_id) || k.settled || !one('SELECT 1 FROM return_acts WHERE contract_id=?', k.id))
+        fail('Расчёт возможен только после оформления акта возврата и только один раз')
       const s = settlementCalc(k.id)
       if (s.rentDue > 0) fail('По договору есть неоплаченная аренда. Сначала примите оплату')
       if ((s.extra > 0 || s.refund > 0) && !p.method_id) fail('Выберите способ оплаты')
@@ -498,7 +526,7 @@ export const services = {
       if (s.extra > 0) add(PAY.fine, s.extra)
       if (s.refund > 0) add(PAY.refund, s.refund)
       run('UPDATE fines SET paid=1 WHERE contract_id=?', k.id)
-      run('UPDATE contracts SET status_id=? WHERE id=?', CTR.closed, k.id)
+      run('UPDATE contracts SET settled=1 WHERE id=?', k.id)
       return { contract: k.code, ...s }
     }),
 

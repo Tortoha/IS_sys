@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { Empty, ErrorLine, Field, Modal, ModalActions, PageHeader, useLoad, useRefs } from '../components'
-import { cleanError, dateRu, todayIso, type Row } from '../types'
+import { addDaysIso, cleanError, dateRu, todayIso, type Row } from '../types'
+
+const TO_DAYS = 180
 
 export default function Maintenance() {
   const refs = useRefs()
@@ -13,6 +15,8 @@ export default function Maintenance() {
 
   const reload = () => (reloadQ(), reloadH(), reloadC())
   const freeCars = cars.filter((c) => [1, 2].includes(c.status_id))
+  const limit = addDaysIso(todayIso(), -TO_DAYS)
+  const due = freeCars.filter((c) => !c.last_service || c.last_service < limit)
 
   const save = async () => {
     try {
@@ -84,6 +88,41 @@ export default function Maintenance() {
             ))}
           </tbody>
         </table>
+      )}
+
+      {due.length > 0 && (
+        <>
+          <h3 className="section">Плановое ТО по сроку</h3>
+          <p className="muted small">ТО не проводилось более {TO_DAYS} дней. Отправьте автомобиль на обслуживание, когда он свободен.</p>
+          <table className="table">
+            <tbody>
+              {due.map((c) => (
+                <tr key={c.id}>
+                  <td>
+                    {c.brand} {c.model}
+                    <div className="muted small">{c.plate}</div>
+                  </td>
+                  <td>последнее ТО: {c.last_service ? dateRu(c.last_service) : 'не проводилось'}</td>
+                  <td className="actions">
+                    <button
+                      className="link"
+                      onClick={async () => {
+                        try {
+                          await window.api.maintenanceSend(c.id)
+                          reload()
+                        } catch (e) {
+                          alert(cleanError(e))
+                        }
+                      }}
+                    >
+                      Отправить на ТО
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
       )}
 
       <h3 className="section">История работ</h3>

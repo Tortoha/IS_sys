@@ -26,6 +26,7 @@ export function getDb(): Database.Database {
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
     db.exec(schema)
+    migrate(db)
     db.exec(refs)
     ensureEmployees(db)
   }
@@ -51,6 +52,17 @@ export function checkPassword(pw: string, stored: string): boolean {
   const test = scryptSync(pw, salt, 32)
   const real = Buffer.from(hash, 'hex')
   return test.length === real.length && timingSafeEqual(test, real)
+}
+
+/** Добавляет столбцы, появившиеся после первой версии схемы, в уже созданную базу. */
+function migrate(d: Database.Database): void {
+  const add = (table: string, col: string, def: string) => {
+    const cols = d.prepare(`PRAGMA table_info(${table})`).all() as Row[]
+    if (!cols.some((c) => c.name === col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`)
+  }
+  add('clients', 'representative', 'TEXT')
+  add('bookings', 'cancel_reason', 'TEXT')
+  add('contracts', 'settled', 'INTEGER NOT NULL DEFAULT 0')
 }
 
 function ensureEmployees(d: Database.Database): void {

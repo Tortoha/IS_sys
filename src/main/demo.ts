@@ -66,6 +66,7 @@ export function loadDemo(): Row {
         iin_bin: iin,
         phone: phone(),
         email: legal ? `info${i}@company.kz` : null,
+        representative: legal ? person() + ', директор' : null,
         id_doc_no: legal ? null : digits(9),
         license_no: 'KZ' + digits(7),
         license_expiry: expired ? addDays(now, -(30 + rnd(300))) : addDays(now, 365 + rnd(1800))
@@ -127,6 +128,7 @@ export function loadDemo(): Row {
       })
       if (Math.random() < 0.1) s.finesAdd(manager, { contract_id: k.id, type_id: 4, amount: 15000 + rnd(3) * 5000, fined_at: ret })
       s.settlementRun(cashier, { contract_id: k.id, method_id: pick([1, 3]), accepted: 10 ** 8, paid_at: ret, ref_no: 'KSP' + digits(9) })
+      s.contractsClose(manager, k.id)
       if (damaged) {
         s.maintenanceCreate(tech, {
           car_id: car, work_type_id: 3, done_at: addDays(ret, 1 + rnd(2)), mileage: 0,
@@ -156,6 +158,8 @@ export function loadDemo(): Row {
       s.returnsCreate(manager, {
         contract_id: k.id, return_date: addDays(to, i), mileage: k.issue_mileage + 400 + rnd(400), fuel: i ? FUEL[2] : FUEL[4], damage: '', damage_amount: 0
       })
+      // второй договор: расчёт сделан, менеджеру осталось его закрыть
+      if (i === 1) s.settlementRun(cashier, { contract_id: k.id, method_id: 1, accepted: 10 ** 8, paid_at: addDays(to, i) })
     } catch {
       /* пропускаем */
     }
@@ -200,7 +204,7 @@ export function loadDemo(): Row {
       s.bookingsCreate(manager, { client_id: pick(clients), car_id: car, date_from: from, date_to: to, note: i === 0 ? 'Нужно детское кресло' : null })
       const b = one('SELECT id FROM bookings ORDER BY id DESC LIMIT 1')
       if (i < 3) s.bookingsConfirm(manager, b.id)
-      if (i === 4) s.bookingsCancel(manager, b.id)
+      if (i === 4) s.bookingsCancel(manager, b.id, 'Клиент изменил планы')
     } catch {
       /* пересечение дат */
     }
@@ -211,7 +215,8 @@ export function loadDemo(): Row {
   for (const c of waiting) s.maintenanceSend(manager, c.id)
 
   // нестандартный остаток: подпись пробега для справки
-  run("UPDATE cars SET last_service=COALESCE(last_service, date('now','-60 day','localtime'))")
+  // у части автомобилей ТО давно не проводилось, чтобы показать плановое ТО по сроку
+  run("UPDATE cars SET last_service=date('now', '-' || (40 + abs(random() % 260)) || ' day', 'localtime') WHERE last_service IS NULL")
 
   return {
     clients: one('SELECT COUNT(*) n FROM clients')!.n,

@@ -4,8 +4,20 @@ import { cleanError, dateRu, money, todayIso, type Row } from '../types'
 
 export default function Returns() {
   const [list, reload] = useLoad<Row[]>(() => window.api.returnsList(), [])
+  const [toClose, reloadClose] = useLoad<Row[]>(() => window.api.contractsToClose(), [])
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState<Row | null>(null)
+
+  const close = async (k: Row) => {
+    if (!confirm(`Закрыть договор ${k.code}?`)) return
+    try {
+      await window.api.contractsClose(k.id)
+      reload()
+      reloadClose()
+    } catch (e) {
+      alert(cleanError(e))
+    }
+  }
 
   return (
     <>
@@ -19,6 +31,29 @@ export default function Returns() {
       >
         <p className="muted">Акты возврата: {list.length}</p>
       </PageHeader>
+
+      {toClose.length > 0 && (
+        <>
+          <h3>Расчёт выполнен, закройте договор</h3>
+          <table className="table">
+            <tbody>
+              {toClose.map((k) => (
+                <tr key={k.id}>
+                  <td>{k.code}</td>
+                  <td>{k.client_name}</td>
+                  <td>{k.car_name}</td>
+                  <td className="actions">
+                    <button className="btn primary" onClick={() => close(k)}>
+                      Закрыть договор
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <h3 className="section">Акты возврата</h3>
+        </>
+      )}
 
       {list.length === 0 ? (
         <Empty text="Актов возврата пока нет" />
@@ -84,7 +119,7 @@ export default function Returns() {
               ? 'Из-за повреждений автомобиль передан специалисту по ТО.'
               : 'Автомобиль свободен и снова доступен для бронирования.'}
           </p>
-          <p className="muted">Следующий шаг: кассир выполняет расчёт по штрафам и возвращает залог.</p>
+          <p className="muted">Следующие шаги: кассир выполняет расчёт по штрафам и залогу, затем менеджер закрывает договор.</p>
           <div className="modal-actions">
             <button className="btn primary" onClick={() => setResult(null)}>
               Готово

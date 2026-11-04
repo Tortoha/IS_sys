@@ -16,7 +16,7 @@ type Names =
   | 'clientsList' | 'clientsSave' | 'clientsDelete' | 'clientHistory'
   | 'carsList' | 'carsSave' | 'carsDelete' | 'carsAvailable'
   | 'bookingsList' | 'bookingsCreate' | 'bookingsConfirm' | 'bookingsCancel'
-  | 'contractsList' | 'contractsOpen' | 'contractGet' | 'contractsCreate' | 'contractsExtend' | 'contractsTerminate' | 'finesAdd'
+  | 'contractsList' | 'contractsOpen' | 'contractGet' | 'contractsCreate' | 'contractsExtend' | 'contractsTerminate' | 'finesAdd' | 'contractsToClose' | 'contractsClose'
   | 'paymentsList' | 'contractFind' | 'paymentsRegister' | 'settlementsList' | 'settlementRun'
   | 'returnsList' | 'returnsCreate'
   | 'maintenanceList' | 'maintenanceQueue' | 'maintenanceSend' | 'maintenanceCreate'

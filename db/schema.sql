@@ -69,7 +69,8 @@ CREATE TABLE IF NOT EXISTS clients (
   email          TEXT,
   id_doc_no      TEXT,                                -- удостоверение личности
   license_no     TEXT NOT NULL,                       -- водительское удостоверение
-  license_expiry TEXT NOT NULL
+  license_expiry TEXT NOT NULL,
+  representative TEXT                                -- представитель юридического лица
 );
 
 CREATE TABLE IF NOT EXISTS bookings (
@@ -83,6 +84,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   created_at  TEXT NOT NULL,
   employee_id INTEGER REFERENCES employees(id),
   note        TEXT,
+  cancel_reason TEXT,
   CHECK (date_to >= date_from)
 );
 
@@ -104,6 +106,7 @@ CREATE TABLE IF NOT EXISTS contracts (
   issue_fuel    TEXT NOT NULL,
   issue_note    TEXT,
   employee_id   INTEGER REFERENCES employees(id),
+  settled       INTEGER NOT NULL DEFAULT 0,           -- расчёт по штрафам и залогу выполнен кассиром
   CHECK (date_to >= date_from)
 );
 
