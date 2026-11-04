@@ -617,7 +617,11 @@ export const services = {
           nextCode('fines', 'SH-', 4), k.id, type, amount, date)
       const fineDefault = (type: number) => one('SELECT default_amount a FROM fine_types WHERE id=?', type)!.a
       const created: string[] = []
-      if (date > k.date_to) { fine(FINE.overdue, fineDefault(FINE.overdue)); created.push('просрочка возврата') }
+      if (date > k.date_to) {
+        const late = daysBetween(k.date_to, date) - 1 // полных суток просрочки
+        fine(FINE.overdue, late * fineDefault(FINE.overdue))
+        created.push(`просрочка возврата (${late} сут.)`)
+      }
       if (FUEL.indexOf(p.fuel) < FUEL.indexOf(k.issue_fuel)) { fine(FINE.fuel, fineDefault(FINE.fuel)); created.push('возврат без топлива') }
       if (damage) { fine(FINE.damage, damageAmount); created.push('повреждение автомобиля') }
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Empty, ErrorLine, Field, KV, Modal, ModalActions, PageHeader, useLoad, useRefs } from '../components'
-import { cleanError, dateRu, money, todayIso, type Row } from '../types'
+import { cleanError, daysCount, dateRu, money, todayIso, type Row } from '../types'
 
 export default function Returns() {
   const [list, reload] = useLoad<Row[]>(() => window.api.returnsList(), [])
@@ -211,7 +211,7 @@ function ReturnForm(props: { onClose: () => void; onDone: (r: Row) => void }) {
       )}
       {(overdue || lessFuel) && (
         <p className="warn">
-          Будут начислены штрафы:{overdue ? ' просрочка возврата' : ''}
+          Будут начислены штрафы:{overdue ? ` просрочка возврата (${daysCount(k.date_to, f.return_date) - 1} сут. × 10 000 ₸)` : ''}
           {overdue && lessFuel ? ',' : ''}
           {lessFuel ? ' возврат без топлива' : ''}
         </p>
