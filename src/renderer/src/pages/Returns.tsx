@@ -89,7 +89,10 @@ export default function Returns() {
                   {r.mileage.toLocaleString('ru-RU')} км
                   <div className="muted small">{r.fuel}</div>
                 </td>
-                <td className="wrap">{r.damage || <span className="muted">нет</span>}</td>
+                <td className="wrap">
+                  {r.damage || <span className="muted">нет</span>}
+                  {r.insurance_case ? <div className="small" style={{ color: 'var(--accent)' }}>страховой случай</div> : null}
+                </td>
                 <td>{r.fines_sum > 0 ? money(r.fines_sum) : <span className="muted">нет</span>}</td>
               </tr>
             ))}
@@ -134,7 +137,7 @@ export default function Returns() {
 function ReturnForm(props: { onClose: () => void; onDone: (r: Row) => void }) {
   const refs = useRefs()
   const [contracts, setContracts] = useState<Row[]>([])
-  const [f, setF] = useState<Row>({ contract_id: 0, return_date: todayIso(), mileage: '', fuel: 'Полный', damage: '', damage_amount: '' })
+  const [f, setF] = useState<Row>({ contract_id: 0, return_date: todayIso(), mileage: '', fuel: 'Полный', damage: '', damage_amount: '', insurance_case: false })
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -196,9 +199,15 @@ function ReturnForm(props: { onClose: () => void; onDone: (r: Row) => void }) {
         <input value={f.damage} onChange={(e) => setF({ ...f, damage: e.target.value })} />
       </Field>
       {f.damage.trim() && (
-        <Field label="Штраф за повреждения, ₸">
-          <input type="number" value={f.damage_amount} onChange={(e) => setF({ ...f, damage_amount: e.target.value })} />
-        </Field>
+        <>
+          <Field label="Штраф за повреждения, ₸">
+            <input type="number" value={f.damage_amount} onChange={(e) => setF({ ...f, damage_amount: e.target.value })} />
+          </Field>
+          <label className="check sign">
+            <input type="checkbox" checked={f.insurance_case} onChange={(e) => setF({ ...f, insurance_case: e.target.checked })} />
+            Оформить как страховой случай
+          </label>
+        </>
       )}
       {(overdue || lessFuel) && (
         <p className="warn">

@@ -6,13 +6,13 @@ const names = [
   'refs', 'refMeta', 'refList', 'refSave', 'refDelete',
   'employeesList', 'employeesSave',
   'clientsList', 'clientsSave', 'clientsDelete', 'clientHistory',
-  'carsList', 'carsSave', 'carsDelete', 'carsAvailable',
+  'carsList', 'carHistory', 'carsSave', 'carsDelete', 'carsAvailable',
   'bookingsList', 'bookingsCreate', 'bookingsConfirm', 'bookingsCancel',
-  'contractsList', 'contractsOpen', 'contractGet', 'contractsCreate', 'contractsExtend', 'contractsTerminate', 'finesAdd', 'contractsToClose', 'contractsClose',
+  'contractsList', 'contractsOpen', 'contractGet', 'contractsCreate', 'contractsExtend', 'contractsTerminate', 'finesAdd', 'contractsAddService', 'contractsToClose', 'contractsClose',
   'paymentsList', 'contractFind', 'paymentsRegister', 'settlementsList', 'settlementRun',
   'returnsList', 'returnsCreate',
   'maintenanceList', 'maintenanceQueue', 'maintenanceSend', 'maintenanceCreate',
-  'report', 'demoLoad', 'demoClear', 'publicClasses', 'publicCars', 'publicRequest', 'publicStatus'
+  'report', 'demoLoad', 'demoClear', 'publicClasses', 'publicCars', 'publicRequest', 'publicStatus', 'publicMyBookings'
 ]
 
 const bridge: Record<string, (...args: unknown[]) => Promise<unknown>> = {}

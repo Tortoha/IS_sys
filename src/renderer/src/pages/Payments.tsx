@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Badge, Empty, ErrorLine, Field, KV, Modal, ModalActions, PageHeader, Search, Tabs, useLoad, useRefs, match } from '../components'
-import { addDaysIso, cleanError, dateRu, money, todayIso, type Row } from '../types'
+import { addDaysIso, cleanError, dateRu, downloadCsv, money, todayIso, type Row } from '../types'
 
 const KASPI = 3
 
@@ -39,6 +39,7 @@ function Accept() {
   const [receipt, setReceipt] = useState<Row | null>(null)
   const [extend, setExtend] = useState<string | null>(null)
   const [fine, setFine] = useState<Row | null>(null)
+  const [service, setService] = useState<number | null>(null)
   const [recalcError, setRecalcError] = useState('')
 
   /** Пересчёт стоимости при продлении или штрафе (сценарий 8, СРО 8). */
@@ -144,16 +145,26 @@ function Accept() {
               ['Автомобиль', `${sel.car_name} · ${sel.plate}`],
               ['Срок', `${dateRu(sel.date_from)} – ${dateRu(sel.date_to)}`],
               ['Тариф', `${sel.tariff_name}, ${money(sel.price_per_day)} в сутки`],
+              ['Доп. услуги', sel.service_names.length ? sel.service_names.map((s: Row) => s.name).join(', ') : 'нет'],
+              ['Сумма аренды по договору', money(sel.rent_sum)],
               ['Аренда к оплате', money(sel.rentDue)],
               ['Залог к внесению', money(sel.depositDue)],
               ['Итого к оплате', money(sel.due)],
-              ...(sel.fines_sum > 0 ? [['Начисленные штрафы', `${money(sel.fines_sum)}, будут удержаны из залога при возврате`] as [string, string]] : [])
+              ...(sel.fines_sum > 0
+                ? ([
+                    ['Начисленные штрафы', `${money(sel.fines_sum)}, будут удержаны из залога при возврате`],
+                    ['Стоимость с учётом штрафов', money(sel.rent_sum + sel.fines_sum)]
+                  ] as [string, string][])
+                : [])
             ]}
           />
           {[1, 2].includes(sel.status_id) && !sel.has_act && (
             <div className="row-actions tight">
               <button className="btn" onClick={() => (setExtend(addDaysIso(sel.date_to, 1)), setRecalcError(''))}>
                 Продлить срок и пересчитать
+              </button>
+              <button className="btn" onClick={() => (setService(0), setRecalcError(''))}>
+                Добавить услугу
               </button>
               <button className="btn" onClick={() => (setFine({ type_id: 4, amount: '' }), setRecalcError(''))}>
                 Начислить штраф
@@ -207,6 +218,28 @@ function Accept() {
             onCancel={() => setExtend(null)}
             ok="Продлить"
             onOk={() => recalc(() => window.api.contractsExtend(sel.id, extend), () => setExtend(null))}
+          />
+        </Modal>
+      )}
+      {sel && service !== null && (
+        <Modal title="Дополнительная услуга" onClose={() => setService(null)}>
+          <Field label="Услуга" hint="Стоимость аренды будет пересчитана на весь срок договора">
+            <select value={service} onChange={(e) => setService(Number(e.target.value))}>
+              <option value={0}>Выберите услугу</option>
+              {refs.services
+                .filter((s: Row) => !sel.service_names.some((x: Row) => x.id === s.id))
+                .map((s: Row) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} · {money(s.price_per_day)}/сут
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <ErrorLine text={recalcError} />
+          <ModalActions
+            onCancel={() => setService(null)}
+            ok="Добавить"
+            onOk={() => recalc(() => window.api.contractsAddService(sel.id, service), () => setService(null))}
           />
         </Modal>
       )}
@@ -409,6 +442,18 @@ function Journal() {
       <div className="searchbar">
         <Search value={q} onChange={setQ} placeholder="Номер, договор, клиент" />
         <span className="muted">Записей: {shown.length}</span>
+        <button
+          className="btn"
+          disabled={shown.length === 0}
+          onClick={() =>
+            downloadCsv('platezhi.csv', [
+              ['Платёж', 'Договор', 'Клиент', 'Вид', 'Способ', 'Номер операции', 'Дата', 'Сумма, тенге', 'Кассир'],
+              ...shown.map((p) => [p.code, p.contract_code, p.client_name, p.type_name, p.method_name, p.ref_no ?? '', p.paid_at, p.type_id === 3 ? -p.amount : p.amount, p.cashier_name ?? ''])
+            ])
+          }
+        >
+          Сохранить в CSV
+        </button>
       </div>
       {shown.length === 0 ? (
         <Empty text="Платежей пока нет" />

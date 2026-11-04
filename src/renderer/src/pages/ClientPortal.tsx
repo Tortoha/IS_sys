@@ -24,10 +24,11 @@ export default function ClientPortal({ onBack }: { onBack: () => void }) {
         onChange={setTab}
         items={[
           ['search', 'Найти автомобиль'],
-          ['status', 'Статус бронирования']
+          ['status', 'Статус бронирования'],
+          ['mine', 'Мои бронирования и аренды']
         ]}
       />
-      <div className="portal-body">{tab === 'search' ? <Search /> : <Status />}</div>
+      <div className="portal-body">{tab === 'search' ? <Search /> : tab === 'status' ? <Status /> : <Mine />}</div>
     </div>
   )
 }
@@ -224,5 +225,89 @@ function Status() {
         </div>
       )}
     </div>
+  )
+}
+
+/** Все свои бронирования и аренды (СРО 4, задача клиента 2). Доступ по ИИН и телефону. */
+function Mine() {
+  const [f, setF] = useState({ iin_bin: '', phone: '' })
+  const [res, setRes] = useState<Row | null>(null)
+  const [error, setError] = useState('')
+
+  const load = async () => {
+    try {
+      setRes(await window.api.publicMyBookings(f))
+      setError('')
+    } catch (e) {
+      setRes(null)
+      setError(cleanError(e))
+    }
+  }
+
+  return (
+    <>
+      <div className="panel">
+        <div className="grid2">
+          <Field label="ИИН">
+            <input maxLength={12} value={f.iin_bin} onChange={(e) => setF({ ...f, iin_bin: e.target.value.replace(/\D/g, '') })} />
+          </Field>
+          <Field label="Телефон, указанный при бронировании">
+            <input placeholder="+7 700 000 00 00" value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} />
+          </Field>
+        </div>
+        <ErrorLine text={error} />
+        <button className="btn primary" onClick={load}>
+          Показать
+        </button>
+      </div>
+      {res && (
+        <>
+          <h3>Бронирования: {res.name}</h3>
+          {res.bookings.length === 0 ? (
+            <p className="muted">Бронирований нет</p>
+          ) : (
+            <table className="table compact">
+              <tbody>
+                {res.bookings.map((b: Row) => (
+                  <tr key={b.code}>
+                    <td>{b.code}</td>
+                    <td>{b.car_name}</td>
+                    <td>
+                      {dateRu(b.date_from)} – {dateRu(b.date_to)}
+                    </td>
+                    <td>
+                      <Badge text={b.status_name} />
+                      {b.cancel_reason && <div className="muted small">{b.cancel_reason}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <h3>Аренды</h3>
+          {res.rentals.length === 0 ? (
+            <p className="muted">Аренд нет</p>
+          ) : (
+            <table className="table compact">
+              <tbody>
+                {res.rentals.map((k: Row) => (
+                  <tr key={k.code}>
+                    <td>{k.code}</td>
+                    <td>{k.car_name}</td>
+                    <td>
+                      {dateRu(k.date_from)} – {dateRu(k.date_to)}
+                    </td>
+                    <td className="num">{money(k.rent_sum)}</td>
+                    <td>
+                      <Badge text={k.status_name} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </>
   )
 }

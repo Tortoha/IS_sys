@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Empty, ErrorLine, Field, PageHeader, Stat } from '../components'
-import { addDaysIso, cleanError, dateRu, money, todayIso, type Row } from '../types'
+import { addDaysIso, cleanError, dateRu, downloadCsv, money, todayIso, type Row } from '../types'
 
 export default function Reports() {
   const [from, setFrom] = useState(addDaysIso(todayIso(), -29))
@@ -39,6 +39,28 @@ export default function Reports() {
         </button>
         <button className="btn" onClick={() => window.print()}>
           Печать
+        </button>
+        <button
+          className="btn"
+          disabled={!data}
+          onClick={() =>
+            data &&
+            downloadCsv(`otchet_${data.from}_${data.to}.csv`, [
+              ['Отчёт за период', `${dateRu(data.from)} – ${dateRu(data.to)}`],
+              ['Договоров', data.contracts],
+              ['Бронирований', data.bookings],
+              [],
+              ['Вид платежа', 'Операций', 'Сумма, тенге'],
+              ...data.byType.map((t: Row) => [t.name, t.cnt, t.sum]),
+              ['Поступило (аренда, залоги, штрафы)', '', data.income],
+              ['Итого за вычетом возвратов залога', '', data.net],
+              [],
+              ['Автомобиль', 'Госномер', 'Договоров', 'Дней в аренде', 'Загрузка, %'],
+              ...data.cars.map((c: Row) => [c.name, c.plate, c.contracts, c.days, c.percent])
+            ])
+          }
+        >
+          Сохранить в CSV
         </button>
       </div>
       <ErrorLine text={error} />

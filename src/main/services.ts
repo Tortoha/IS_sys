@@ -273,14 +273,31 @@ export const services = {
       let st = cur.status_id
       if ([CAR.free, CAR.unavailable].includes(num(c.status_id)) && [CAR.free, CAR.booked, CAR.unavailable].includes(cur.status_id))
         st = num(c.status_id)
-      run(`UPDATE cars SET brand=?, model=?, plate=?, vin=?, year=?, class_id=?, color=?, mileage=?, status_id=? WHERE id=?`,
-        brand, model, plate, str(c.vin).toUpperCase() || null, year, c.class_id, str(c.color) || null, num(c.mileage), st, c.id)
+      run(`UPDATE cars SET brand=?, model=?, plate=?, vin=?, year=?, class_id=?, color=?, mileage=?, status_id=?,
+                  osgpo_policy=?, osgpo_until=?, kasko_policy=?, kasko_until=? WHERE id=?`,
+        brand, model, plate, str(c.vin).toUpperCase() || null, year, c.class_id, str(c.color) || null, num(c.mileage), st,
+        str(c.osgpo_policy) || null, str(c.osgpo_until) || null, str(c.kasko_policy) || null, str(c.kasko_until) || null, c.id)
       refreshBooked(c.id)
     } else {
-      run(`INSERT INTO cars (code, brand, model, plate, vin, year, class_id, color, mileage) VALUES (?,?,?,?,?,?,?,?,?)`,
-        nextCode('cars', 'A-', 4), brand, model, plate, str(c.vin).toUpperCase() || null, year, c.class_id, str(c.color) || null, num(c.mileage))
+      run(`INSERT INTO cars (code, brand, model, plate, vin, year, class_id, color, mileage, osgpo_policy, osgpo_until, kasko_policy, kasko_until)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        nextCode('cars', 'A-', 4), brand, model, plate, str(c.vin).toUpperCase() || null, year, c.class_id, str(c.color) || null, num(c.mileage),
+        str(c.osgpo_policy) || null, str(c.osgpo_until) || null, str(c.kasko_policy) || null, str(c.kasko_until) || null)
     }
   },
+
+  /** Карточка автомобиля: история ТО и технического осмотра, повреждения и страховые случаи (R12, R9). */
+  carHistory: (_u: User, id: number): Row => ({
+    car: one('SELECT c.*, cl.name AS class_name FROM cars c JOIN car_classes cl ON cl.id=c.class_id WHERE c.id=?', id),
+    maintenance: all(
+      `SELECT m.code, m.done_at, m.mileage, m.result, w.name AS work_name, s.name AS new_status_name, e.full_name AS specialist_name
+         FROM maintenance m JOIN work_types w ON w.id=m.work_type_id JOIN car_statuses s ON s.id=m.new_status_id
+         LEFT JOIN employees e ON e.id=m.specialist_id WHERE m.car_id=? ORDER BY m.id DESC`, id),
+    returns: all(
+      `SELECT r.code, r.return_date, r.mileage, r.fuel, r.damage, r.insurance_case, k.code AS contract_code, cl.full_name AS client_name
+         FROM return_acts r JOIN contracts k ON k.id=r.contract_id JOIN clients cl ON cl.id=k.client_id
+        WHERE k.car_id=? ORDER BY r.id DESC`, id)
+  }),
 
   carsDelete: (_u: User, id: number): void => {
     run('DELETE FROM cars WHERE id=?', id)
@@ -350,7 +367,7 @@ export const services = {
     if (!k) fail('Договор не найден')
     return {
       ...k,
-      services: all(`SELECT s.name, cs.price_per_day FROM contract_services cs
+      services: all(`SELECT s.id, s.name, cs.price_per_day FROM contract_services cs
                       JOIN extra_services s ON s.id=cs.service_id WHERE cs.contract_id=?`, id),
       payments: all(`SELECT p.*, t.name AS type_name, m.name AS method_name, e.full_name AS cashier_name
                        FROM payments p JOIN payment_types t ON t.id=p.type_id
@@ -431,6 +448,21 @@ export const services = {
       if (due.due === 0) run('UPDATE contracts SET status_id=? WHERE id=?', CTR.paid, id)
     }),
 
+  /** Добавление дополнительной услуги к действующему договору с пересчётом стоимости (R7). */
+  contractsAddService: (_u: User, id: number, serviceId: number): void =>
+    tx(() => {
+      const k = one('SELECT * FROM contracts WHERE id=?', id)
+      if (!k || ![CTR.created, CTR.paid].includes(k.status_id) || one('SELECT 1 FROM return_acts WHERE contract_id=?', id))
+        fail('Услугу можно добавить только к действующему договору')
+      const svc = one('SELECT * FROM extra_services WHERE id=?', serviceId)
+      if (!svc) fail('Услуга не найдена')
+      if (one('SELECT 1 FROM contract_services WHERE contract_id=? AND service_id=?', id, serviceId)) fail('Эта услуга уже добавлена к договору')
+      run('INSERT INTO contract_services (contract_id, service_id, price_per_day) VALUES (?,?,?)', id, serviceId, svc.price_per_day)
+      const sum = num(one('SELECT SUM(price_per_day) s FROM contract_services WHERE contract_id=?', id)?.s)
+      run('UPDATE contracts SET rent_sum=?, status_id=? WHERE id=?', daysBetween(k.date_from, k.date_to) * (k.price_per_day + sum), CTR.created, id)
+      if (contractDue(id).due === 0) run('UPDATE contracts SET status_id=? WHERE id=?', CTR.paid, id)
+    }),
+
   contractsTerminate: (_u: User, id: number): void =>
     tx(() => {
       const k = one('SELECT * FROM contracts WHERE id=?', id)
@@ -474,7 +506,8 @@ export const services = {
       ...k,
       ...contractDue(k.id),
       services_sum: num(one('SELECT SUM(price_per_day) s FROM contract_services WHERE contract_id=?', k.id)?.s),
-      fines_sum: num(one('SELECT SUM(amount) s FROM fines WHERE contract_id=? AND paid=0', k.id)?.s)
+      fines_sum: num(one('SELECT SUM(amount) s FROM fines WHERE contract_id=? AND paid=0', k.id)?.s),
+      service_names: all('SELECT s.id, s.name FROM contract_services cs JOIN extra_services s ON s.id=cs.service_id WHERE cs.contract_id=?', k.id)
     }))
   },
 
@@ -572,11 +605,12 @@ export const services = {
       if (!FUEL.includes(p.fuel)) fail('Выберите уровень топлива')
       const damage = str(p.damage)
       const damageAmount = num(p.damage_amount)
+      const insuranceCase = damage && p.insurance_case ? 1 : 0
       if (damage && damageAmount <= 0) fail('Укажите сумму штрафа за повреждения по акту')
 
       const code = nextCode('return_acts', 'A', 4, year(date))
-      run(`INSERT INTO return_acts (code, contract_id, return_date, mileage, fuel, damage, employee_id) VALUES (?,?,?,?,?,?,?)`,
-        code, k.id, date, mileage, p.fuel, damage || null, u.id)
+      run(`INSERT INTO return_acts (code, contract_id, return_date, mileage, fuel, damage, insurance_case, employee_id) VALUES (?,?,?,?,?,?,?,?)`,
+        code, k.id, date, mileage, p.fuel, damage || null, insuranceCase, u.id)
 
       const fine = (type: number, amount: number) =>
         run('INSERT INTO fines (code, contract_id, type_id, amount, fined_at) VALUES (?,?,?,?,?)',
@@ -711,6 +745,25 @@ export const publicApi = {
       })
       return { code, status: 'Создано' }
     }),
+
+  /** Сценарий 2 (СРО 4): все свои бронирования и аренды по ИИН и телефону. */
+  publicMyBookings: (p: Row): Row => {
+    const digits = (s: unknown) => String(s ?? '').replace(/\D/g, '')
+    const cl = one('SELECT * FROM clients WHERE iin_bin=?', str(p.iin_bin))
+    if (!cl || digits(p.phone).length < 10 || digits(cl.phone).slice(-10) !== digits(p.phone).slice(-10))
+      fail('Клиент не найден. Проверьте ИИН и телефон')
+    return {
+      name: cl.full_name,
+      bookings: all(
+        `SELECT b.code, b.date_from, b.date_to, b.cancel_reason, s.name AS status_name, c.brand || ' ' || c.model AS car_name
+           FROM bookings b JOIN cars c ON c.id=b.car_id JOIN booking_statuses s ON s.id=b.status_id
+          WHERE b.client_id=? ORDER BY b.id DESC`, cl.id),
+      rentals: all(
+        `SELECT k.code, k.date_from, k.date_to, k.rent_sum, s.name AS status_name, c.brand || ' ' || c.model AS car_name
+           FROM contracts k JOIN cars c ON c.id=k.car_id JOIN contract_statuses s ON s.id=k.status_id
+          WHERE k.client_id=? ORDER BY k.id DESC`, cl.id)
+    }
+  },
 
   /** Сценарий 3: статус бронирования по номеру брони и ИИН. */
   publicStatus: (p: Row): Row => {

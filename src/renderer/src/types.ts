@@ -14,13 +14,13 @@ type Names =
   | 'login' | 'logout' | 'me' | 'refs' | 'refMeta' | 'refList' | 'refSave' | 'refDelete'
   | 'employeesList' | 'employeesSave'
   | 'clientsList' | 'clientsSave' | 'clientsDelete' | 'clientHistory'
-  | 'carsList' | 'carsSave' | 'carsDelete' | 'carsAvailable'
+  | 'carsList' | 'carHistory' | 'carsSave' | 'carsDelete' | 'carsAvailable'
   | 'bookingsList' | 'bookingsCreate' | 'bookingsConfirm' | 'bookingsCancel'
-  | 'contractsList' | 'contractsOpen' | 'contractGet' | 'contractsCreate' | 'contractsExtend' | 'contractsTerminate' | 'finesAdd' | 'contractsToClose' | 'contractsClose'
+  | 'contractsList' | 'contractsOpen' | 'contractGet' | 'contractsCreate' | 'contractsExtend' | 'contractsTerminate' | 'finesAdd' | 'contractsAddService' | 'contractsToClose' | 'contractsClose'
   | 'paymentsList' | 'contractFind' | 'paymentsRegister' | 'settlementsList' | 'settlementRun'
   | 'returnsList' | 'returnsCreate'
   | 'maintenanceList' | 'maintenanceQueue' | 'maintenanceSend' | 'maintenanceCreate'
-  | 'report' | 'demoLoad' | 'demoClear' | 'publicClasses' | 'publicCars' | 'publicRequest' | 'publicStatus'
+  | 'report' | 'demoLoad' | 'demoClear' | 'publicClasses' | 'publicCars' | 'publicRequest' | 'publicStatus' | 'publicMyBookings'
 
 declare global {
   interface Window {
@@ -49,3 +49,14 @@ export const daysCount = (from: string, to: string): number =>
 
 export const cleanError = (e: unknown): string =>
   (e as Error).message.replace(/^Error invoking remote method '.*?': Error: /, '')
+
+/** Сохраняет таблицу в CSV (разделитель «;», с BOM — открывается в Excel). Для бухгалтерии и руководства. */
+export function downloadCsv(filename: string, rows: (string | number)[][]): void {
+  const cell = (v: string | number) => `"${String(v).replace(/"/g, '""')}"`
+  const blob = new Blob(['﻿' + rows.map((r) => r.map(cell).join(';')).join('\r\n')], { type: 'text/csv;charset=utf-8' })
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000)
+}

@@ -113,6 +113,7 @@ function ContractDetail(props: { k: Row; canEdit: boolean; onClose: () => void; 
   const refs = useRefs()
   const active = [1, 2].includes(k.status_id) && !k.act
   const [extend, setExtend] = useState<string | null>(null)
+  const [service, setService] = useState<number | null>(null)
   const [fine, setFine] = useState<Row | null>(null)
   const [error, setError] = useState('')
 
@@ -203,6 +204,9 @@ function ContractDetail(props: { k: Row; canEdit: boolean; onClose: () => void; 
           <button className="btn" onClick={() => setExtend(addDaysIso(k.date_to, 1))}>
             Продлить аренду
           </button>
+          <button className="btn" onClick={() => setService(0)}>
+            Добавить услугу
+          </button>
           <button className="btn" onClick={() => setFine({ type_id: 4, amount: '' })}>
             Начислить штраф
           </button>
@@ -230,6 +234,28 @@ function ContractDetail(props: { k: Row; canEdit: boolean; onClose: () => void; 
             onCancel={() => setExtend(null)}
             ok="Продлить"
             onOk={() => run(() => window.api.contractsExtend(k.id, extend), () => setExtend(null))}
+          />
+        </Modal>
+      )}
+      {service !== null && (
+        <Modal title="Дополнительная услуга" onClose={() => setService(null)}>
+          <Field label="Услуга" hint="Стоимость аренды будет пересчитана на весь срок договора">
+            <select value={service} onChange={(e) => setService(Number(e.target.value))}>
+              <option value={0}>Выберите услугу</option>
+              {refs.services
+                .filter((s: Row) => !k.services.some((x: Row) => x.id === s.id))
+                .map((s: Row) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name} · {money(s.price_per_day)}/сут
+                  </option>
+                ))}
+            </select>
+          </Field>
+          <ErrorLine text={error} />
+          <ModalActions
+            onCancel={() => setService(null)}
+            ok="Добавить"
+            onOk={() => run(() => window.api.contractsAddService(k.id, service), () => setService(null))}
           />
         </Modal>
       )}

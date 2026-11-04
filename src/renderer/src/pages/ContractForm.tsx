@@ -98,6 +98,11 @@ export default function ContractForm(props: { booking?: Row; onClose: () => void
         </>
       )}
 
+      {car && (!car.osgpo_until || car.osgpo_until < to) && (
+        <p className="warn">
+          {car.osgpo_until ? `Полис ОС ГПО ВТС автомобиля действует до ${dateRu(car.osgpo_until)}, раньше окончания аренды` : 'У автомобиля не указан полис ОС ГПО ВТС'}
+        </p>
+      )}
       {client && client.unpaid_fines > 0 && (
         <p className="warn">У клиента есть неоплаченные штрафы на {money(client.unpaid_fines)}</p>
       )}

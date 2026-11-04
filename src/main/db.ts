@@ -63,6 +63,11 @@ function migrate(d: Database.Database): void {
   add('clients', 'representative', 'TEXT')
   add('bookings', 'cancel_reason', 'TEXT')
   add('contracts', 'settled', 'INTEGER NOT NULL DEFAULT 0')
+  add('cars', 'osgpo_policy', 'TEXT')
+  add('cars', 'osgpo_until', 'TEXT')
+  add('cars', 'kasko_policy', 'TEXT')
+  add('cars', 'kasko_until', 'TEXT')
+  add('return_acts', 'insurance_case', 'INTEGER NOT NULL DEFAULT 0')
 }
 
 function ensureEmployees(d: Database.Database): void {

@@ -79,8 +79,12 @@ export function loadDemo(): Row {
 
   // автомобили
   const carIds: number[] = []
-  fleet.forEach(([brand, model, year, class_id]) => {
+  fleet.forEach(([brand, model, year, class_id], idx) => {
     s.carsSave(manager, {
+      osgpo_policy: 'ОС-' + digits(8),
+      osgpo_until: idx === 3 ? addDays(now, 4) : addDays(now, 90 + rnd(270)),
+      kasko_policy: idx % 2 === 0 ? 'КАСКО-' + digits(7) : null,
+      kasko_until: idx % 2 === 0 ? addDays(now, 60 + rnd(300)) : null,
       brand, model, year, class_id,
       plate: `${digits(3)} ${letters(3)} ${pick(['01', '02', '02', '02', '05', '09', '15'])}`,
       vin: letters(3) + digits(14),
@@ -124,7 +128,8 @@ export function loadDemo(): Row {
         contract_id: k.id, return_date: ret, mileage: k.issue_mileage + 80 + rnd(900) * len,
         fuel: Math.random() < 0.15 ? FUEL[Math.max(0, fuelIdx - 1)] : FUEL[fuelIdx],
         damage: damaged ? pick(['Царапина на переднем бампере', 'Скол лобового стекла', 'Вмятина на левой двери']) : '',
-        damage_amount: damaged ? pick([15000, 30000, 60000]) : 0
+        damage_amount: damaged ? pick([15000, 30000, 60000]) : 0,
+        insurance_case: damaged && Math.random() < 0.5
       })
       if (Math.random() < 0.1) s.finesAdd(manager, { contract_id: k.id, type_id: 4, amount: 15000 + rnd(3) * 5000, fined_at: ret })
       s.settlementRun(cashier, { contract_id: k.id, method_id: pick([1, 3]), accepted: 10 ** 8, paid_at: ret, ref_no: 'KSP' + digits(9) })
@@ -166,11 +171,11 @@ export function loadDemo(): Row {
   }
 
   // плановое ТО в истории
-  for (const car of carIds.slice(0, 6)) {
+  for (const car of carIds.slice(0, 12)) {
     try {
       s.maintenanceSend(manager, car)
       s.maintenanceCreate(tech, {
-        car_id: car, work_type_id: pick([1, 2, 4, 5]), done_at: addDays(now, -(20 + rnd(40))), mileage: 0,
+        car_id: car, work_type_id: pick([1, 2, 4, 5]), done_at: addDays(now, -(20 + rnd(280))), mileage: 0,
         result: pick(['Заменено масло и фильтры', 'Плановое ТО выполнено', 'Выполнен технический осмотр']), new_status_id: 1
       })
     } catch {
@@ -215,8 +220,7 @@ export function loadDemo(): Row {
   for (const c of waiting) s.maintenanceSend(manager, c.id)
 
   // нестандартный остаток: подпись пробега для справки
-  // у части автомобилей ТО давно не проводилось, чтобы показать плановое ТО по сроку
-  run("UPDATE cars SET last_service=date('now', '-' || (40 + abs(random() % 260)) || ' day', 'localtime') WHERE last_service IS NULL")
+  // три автомобиля без записей о ТО: они попадут в список планового ТО по сроку
 
   return {
     clients: one('SELECT COUNT(*) n FROM clients')!.n,

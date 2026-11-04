@@ -56,7 +56,11 @@ CREATE TABLE IF NOT EXISTS cars (
   color         TEXT,
   mileage       INTEGER NOT NULL DEFAULT 0 CHECK (mileage >= 0),
   status_id     INTEGER NOT NULL DEFAULT 1 REFERENCES car_statuses(id),
-  last_service  TEXT                                  -- дата последнего ТО
+  last_service  TEXT,                                 -- дата последнего ТО
+  osgpo_policy  TEXT,                                 -- полис ОС ГПО ВТС
+  osgpo_until   TEXT,
+  kasko_policy  TEXT,                                 -- полис КАСКО
+  kasko_until   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS clients (
@@ -137,6 +141,7 @@ CREATE TABLE IF NOT EXISTS return_acts (
   mileage     INTEGER NOT NULL,
   fuel        TEXT NOT NULL,
   damage      TEXT,
+  insurance_case INTEGER NOT NULL DEFAULT 0,          -- повреждение оформлено как страховой случай
   employee_id INTEGER REFERENCES employees(id)
 );
 
