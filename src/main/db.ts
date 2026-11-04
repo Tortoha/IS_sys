@@ -2,6 +2,7 @@ import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
 import schema from '../../db/schema.sql?raw'
+import { clearAll, seedDemo } from './seed'
 
 let db: Database.Database
 
@@ -128,7 +129,15 @@ export const api = {
       d.prepare('UPDATE rentals SET status=? WHERE id=?').run(status, id)
       d.prepare("UPDATE cars SET status='free' WHERE id=?").run(r.car_id)
     })()
-  }
+  },
+
+  // Демо-данные
+  demoLoad: (): { clients: number; cars: number; rentals: number } => {
+    const d = getDb()
+    clearAll(d)
+    return seedDemo(d)
+  },
+  demoClear: (): void => clearAll(getDb())
 }
 
 export type Api = typeof api

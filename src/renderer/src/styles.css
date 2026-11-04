@@ -58,6 +58,14 @@ select {
   letter-spacing: -0.01em;
 }
 
+.sidebar-foot {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+}
+
 nav {
   display: flex;
   flex-direction: column;

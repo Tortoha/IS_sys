@@ -9,7 +9,9 @@ const names = [
   'carsDelete',
   'rentalsList',
   'rentalsCreate',
-  'rentalsFinish'
+  'rentalsFinish',
+  'demoLoad',
+  'demoClear'
 ] as const
 
 const bridge: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
