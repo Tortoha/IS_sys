@@ -1,0 +1,21 @@
+appId: kz.turan.carrental
+productName: Прокат автомобилей
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - package.json
+asarUnpack:
+  - node_modules/better-sqlite3/**/*
+npmRebuild: false
+win:
+  target: nsis
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Прокат автомобилей
+  artifactName: Прокат-автомобилей-Setup-${version}.exe
