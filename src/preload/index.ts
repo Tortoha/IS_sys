@@ -1,18 +1,19 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
+// Каждая операция main-процесса доступна окну как window.api.<имя>(...)
 const names = [
-  'clientsList',
-  'clientsSave',
-  'clientsDelete',
-  'carsList',
-  'carsSave',
-  'carsDelete',
-  'rentalsList',
-  'rentalsCreate',
-  'rentalsFinish',
-  'demoLoad',
-  'demoClear'
-] as const
+  'login', 'logout', 'me',
+  'refs', 'refMeta', 'refList', 'refSave', 'refDelete',
+  'employeesList', 'employeesSave',
+  'clientsList', 'clientsSave', 'clientsDelete', 'clientHistory',
+  'carsList', 'carsSave', 'carsDelete', 'carsAvailable',
+  'bookingsList', 'bookingsCreate', 'bookingsConfirm', 'bookingsCancel',
+  'contractsList', 'contractsOpen', 'contractGet', 'contractsCreate', 'contractsExtend', 'contractsTerminate', 'finesAdd',
+  'paymentsList', 'contractFind', 'paymentsRegister', 'settlementsList', 'settlementRun',
+  'returnsList', 'returnsCreate',
+  'maintenanceList', 'maintenanceQueue', 'maintenanceSend', 'maintenanceCreate',
+  'report', 'demoLoad', 'demoClear'
+]
 
 const bridge: Record<string, (...args: unknown[]) => Promise<unknown>> = {}
 for (const n of names) {

@@ -1,143 +1,89 @@
 import Database from 'better-sqlite3'
 import { app } from 'electron'
 import { join } from 'path'
+import { randomBytes, scryptSync, timingSafeEqual } from 'crypto'
 import schema from '../../db/schema.sql?raw'
-import { clearAll, seedDemo } from './seed'
+import refs from '../../db/refs.sql?raw'
+
+export interface User {
+  id: number
+  code: string
+  full_name: string
+  role_id: number
+  login: string
+}
+
+export const ROLE = { manager: 1, cashier: 2, tech: 3, boss: 4 } as const
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Row = any
 
 let db: Database.Database
 
 export function getDb(): Database.Database {
   if (!db) {
-    db = new Database(join(app.getPath('userData'), 'carrental.db'))
+    db = new Database(join(app.getPath('userData'), 'rental.db'))
     db.pragma('journal_mode = WAL')
     db.pragma('foreign_keys = ON')
     db.exec(schema)
+    db.exec(refs)
+    ensureEmployees(db)
   }
   return db
 }
 
-export interface Client {
-  id: number
-  full_name: string
-  iin: string
-  phone: string
-  license_no: string
+export const all = (sql: string, ...p: unknown[]): Row[] => getDb().prepare(sql).all(...p)
+export const one = (sql: string, ...p: unknown[]): Row | undefined => getDb().prepare(sql).get(...p)
+export const run = (sql: string, ...p: unknown[]) => getDb().prepare(sql).run(...p)
+
+export function fail(msg: string): never {
+  throw new Error(msg)
 }
 
-export interface Car {
-  id: number
-  brand: string
-  model: string
-  plate: string
-  vin: string | null
-  year: number
-  daily_price: number
-  status: 'free' | 'rented' | 'service'
+// ───────────── пароли ─────────────
+export function hashPassword(pw: string): string {
+  const salt = randomBytes(16).toString('hex')
+  return salt + ':' + scryptSync(pw, salt, 32).toString('hex')
 }
 
-export interface Rental {
-  id: number
-  client_id: number
-  car_id: number
-  date_from: string
-  date_to: string
-  total: number
-  status: 'active' | 'closed' | 'cancelled'
-  client_name: string
-  car_name: string
-  plate: string
+export function checkPassword(pw: string, stored: string): boolean {
+  const [salt, hash] = stored.split(':')
+  const test = scryptSync(pw, salt, 32)
+  const real = Buffer.from(hash, 'hex')
+  return test.length === real.length && timingSafeEqual(test, real)
 }
 
-function days(from: string, to: string): number {
-  const ms = new Date(to).getTime() - new Date(from).getTime()
-  return Math.max(1, Math.round(ms / 86400000) + 1)
+function ensureEmployees(d: Database.Database): void {
+  const n = (d.prepare('SELECT COUNT(*) n FROM employees').get() as Row).n
+  if (n > 0) return
+  const ins = d.prepare(
+    'INSERT INTO employees (code, full_name, role_id, login, password_hash) VALUES (?,?,?,?,?)'
+  )
+  const pw = hashPassword('1234')
+  ins.run('S-001', 'Сулейменов И.К.', ROLE.boss, 'boss', pw)
+  ins.run('S-002', 'Жомартов Ж.Д.', ROLE.manager, 'manager', pw)
+  ins.run('S-003', 'Омарова А.К.', ROLE.cashier, 'kassir', pw)
+  ins.run('S-004', 'Бекова С.Н.', ROLE.tech, 'to', pw)
 }
 
-export const api = {
-  // Клиенты
-  clientsList: (): Client[] =>
-    getDb().prepare('SELECT * FROM clients ORDER BY full_name').all() as Client[],
-  clientsSave: (c: Omit<Client, 'id'> & { id?: number }): void => {
-    if (c.id) {
-      getDb()
-        .prepare('UPDATE clients SET full_name=?, iin=?, phone=?, license_no=? WHERE id=?')
-        .run(c.full_name, c.iin, c.phone, c.license_no, c.id)
-    } else {
-      getDb()
-        .prepare('INSERT INTO clients (full_name, iin, phone, license_no) VALUES (?,?,?,?)')
-        .run(c.full_name, c.iin, c.phone, c.license_no)
-    }
-  },
-  clientsDelete: (id: number): void => {
-    getDb().prepare('DELETE FROM clients WHERE id=?').run(id)
-  },
+// ───────────── даты и коды ─────────────
+const p2 = (n: number) => String(n).padStart(2, '0')
+export const isoDate = (d: Date): string => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`
+export const today = (): string => isoDate(new Date())
+export const addDays = (s: string, n: number): string => {
+  const d = new Date(s + 'T00:00:00')
+  d.setDate(d.getDate() + n)
+  return isoDate(d)
+}
+export const daysBetween = (from: string, to: string): number =>
+  Math.round((+new Date(to + 'T00:00:00') - +new Date(from + 'T00:00:00')) / 86400000) + 1
 
-  // Автомобили
-  carsList: (): Car[] => getDb().prepare('SELECT * FROM cars ORDER BY brand, model').all() as Car[],
-  carsSave: (c: Omit<Car, 'id' | 'status'> & { id?: number; status?: Car['status'] }): void => {
-    if (c.id) {
-      getDb()
-        .prepare(
-          'UPDATE cars SET brand=?, model=?, plate=?, vin=?, year=?, daily_price=?, status=COALESCE(?, status) WHERE id=?'
-        )
-        .run(c.brand, c.model, c.plate, c.vin, c.year, c.daily_price, c.status ?? null, c.id)
-    } else {
-      getDb()
-        .prepare(
-          'INSERT INTO cars (brand, model, plate, vin, year, daily_price) VALUES (?,?,?,?,?,?)'
-        )
-        .run(c.brand, c.model, c.plate, c.vin, c.year, c.daily_price)
-    }
-  },
-  carsDelete: (id: number): void => {
-    getDb().prepare('DELETE FROM cars WHERE id=?').run(id)
-  },
-
-  // Договоры проката
-  rentalsList: (): Rental[] =>
-    getDb()
-      .prepare(
-        `SELECT r.*, cl.full_name AS client_name,
-                c.brand || ' ' || c.model AS car_name, c.plate
-           FROM rentals r
-           JOIN clients cl ON cl.id = r.client_id
-           JOIN cars c ON c.id = r.car_id
-          ORDER BY r.id DESC`
-      )
-      .all() as Rental[],
-  rentalsCreate: (r: { client_id: number; car_id: number; date_from: string; date_to: string }): void => {
-    const d = getDb()
-    d.transaction(() => {
-      const car = d.prepare('SELECT * FROM cars WHERE id=?').get(r.car_id) as Car | undefined
-      if (!car) throw new Error('Автомобиль не найден')
-      if (car.status !== 'free') throw new Error('Автомобиль сейчас недоступен')
-      if (r.date_to < r.date_from) throw new Error('Дата возврата раньше даты выдачи')
-      const total = days(r.date_from, r.date_to) * car.daily_price
-      d.prepare(
-        'INSERT INTO rentals (client_id, car_id, date_from, date_to, total) VALUES (?,?,?,?,?)'
-      ).run(r.client_id, r.car_id, r.date_from, r.date_to, total)
-      d.prepare("UPDATE cars SET status='rented' WHERE id=?").run(r.car_id)
-    })()
-  },
-  rentalsFinish: (id: number, status: 'closed' | 'cancelled'): void => {
-    const d = getDb()
-    d.transaction(() => {
-      const r = d.prepare('SELECT car_id FROM rentals WHERE id=?').get(id) as
-        | { car_id: number }
-        | undefined
-      if (!r) return
-      d.prepare('UPDATE rentals SET status=? WHERE id=?').run(status, id)
-      d.prepare("UPDATE cars SET status='free' WHERE id=?").run(r.car_id)
-    })()
-  },
-
-  // Демо-данные
-  demoLoad: (): { clients: number; cars: number; rentals: number } => {
-    const d = getDb()
-    clearAll(d)
-    return seedDemo(d)
-  },
-  demoClear: (): void => clearAll(getDb())
+/** Следующий код вида PREFIX + номер (+ год). */
+export function nextCode(table: string, prefix: string, width: number, year?: string): string {
+  const full = year ? `${prefix}-${year}-` : prefix
+  const last = one(`SELECT code FROM ${table} WHERE code LIKE ? ORDER BY id DESC LIMIT 1`, full + '%')
+  const num = last ? parseInt(String(last.code).slice(full.length), 10) + 1 : 1
+  return full + String(num).padStart(width, '0')
 }
 
-export type Api = typeof api
+export const FUEL = ['Пустой', '1/4 бака', '1/2 бака', '3/4 бака', 'Полный'] as const
