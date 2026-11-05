@@ -190,7 +190,9 @@ function BookingForm(props: { onClose: () => void; onDone: (code: string) => voi
   }
 
   return (
-    <Modal title="Новая бронь" onClose={props.onClose} wide>
+    <Modal title="Новая бронь" onClose={props.onClose} wide xwide>
+      <div className="cols">
+      <div>
       <div className="grid2">
         <Field label="Дата начала">
           <input type="date" min={todayIso()} value={f.date_from} onChange={(e) => setF({ ...f, date_from: e.target.value, car_id: 0 })} />
@@ -234,6 +236,8 @@ function BookingForm(props: { onClose: () => void; onDone: (code: string) => voi
         />
       )}
 
+      </div>
+      <div>
       <div className="field">
         <span>Клиент</span>
         <div className="inline">
@@ -266,6 +270,8 @@ function BookingForm(props: { onClose: () => void; onDone: (code: string) => voi
       <Field label="Примечание">
         <input value={f.note} onChange={(e) => setF({ ...f, note: e.target.value })} />
       </Field>
+      </div>
+      </div>
       <ErrorLine text={error} />
       <ModalActions onCancel={props.onClose} onOk={submit} ok="Подтвердить бронирование" />
 

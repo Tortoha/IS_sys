@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { cleanError, type Row } from './types'
 
-export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
+export function Modal(props: { title: string; onClose: () => void; children: ReactNode; wide?: boolean; xwide?: boolean }) {
   const { onClose } = props
   useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -11,7 +11,7 @@ export function Modal(props: { title: string; onClose: () => void; children: Rea
 
   return (
     <div className="overlay" onMouseDown={onClose}>
-      <div className={'modal' + (props.wide ? ' wide' : '')} onMouseDown={(e) => e.stopPropagation()}>
+      <div className={'modal' + (props.wide ? ' wide' : '') + (props.xwide ? ' xwide' : '')} onMouseDown={(e) => e.stopPropagation()}>
         <h2>{props.title}</h2>
         {props.children}
       </div>

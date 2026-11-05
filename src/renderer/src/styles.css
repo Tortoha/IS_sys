@@ -400,3 +400,7 @@ h3.section { margin-top: 48px; }
 .portal { max-width: 1000px; margin: 0 auto; padding: 48px 32px; height: 100%; overflow-y: auto; }
 .portal-head { display: flex; justify-content: space-between; align-items: flex-start; }
 .portal-body { padding-top: 32px; }
+
+.modal.xwide { width: 1000px; }
+.cols { display: grid; grid-template-columns: 1fr 1fr; gap: 0 40px; }
+.cols .kv > div { grid-template-columns: 150px 1fr; }
